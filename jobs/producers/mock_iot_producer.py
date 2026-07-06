@@ -20,11 +20,6 @@ EVENT_RULES = {
     "battery": (0, 100, "%"),
 }
 
-producer = KafkaProducer(
-    bootstrap_servers="localhost:9092",
-    value_serializer=lambda v: json.dumps(v).encode("utf-8")
-)
-
 def generate_event():
     event_type = random.choice(list(EVENT_RULES.keys()))
     low, high, unit = EVENT_RULES[event_type]
@@ -47,6 +42,11 @@ def generate_event():
     }
 
 if __name__ == "__main__":
+    producer = KafkaProducer(
+        bootstrap_servers="localhost:9092",
+        value_serializer=lambda v: json.dumps(v).encode("utf-8")
+    )
+
     while True:
         event = generate_event()
         producer.send("smart-home.events", value=event)
