@@ -1,0 +1,157 @@
+# docker-compose.yml
+# Local development cluster: Redpanda (Kafka-compatible broker), Spark
+# (master + worker), Airflow (webserver + scheduler + Postgres metadata db).
+#
+# Quickstart:
+#   docker compose up -d --build
+#   ./scripts/init-redpanda-topics.sh   # (or let redpanda-init service do it)
+#   open http://localhost:8080          # Airflow UI (airflow/airflow)
+#   open http://localhost:8081          # Spark master UI
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: docker/airflow/Dockerfile
+  env_file: .env
+  environment:
+    AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
+    AIRFLOW__CORE__LOAD_EXAMPLES: ${AIRFLOW__CORE__LOAD_EXAMPLES}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+    BROKER_ADDRESS: ${BROKER_ADDRESS}
+    TOPIC_NAME: ${TOPIC_NAME}
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./config/airflow.cfg:/opt/airflow/airflow.cfg
+    - ./jobs:/opt/airflow/project/jobs
+    - ./storage:/opt/airflow/project/storage
+    - airflow_logs:/opt/airflow/logs
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+
+  # --- Streaming broker ---
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.9
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092,OUTSIDE://localhost:19092
+    ports:
+      - "19092:19092"   # host-reachable Kafka port
+      - "9644:9644"     # admin API
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health", "--exit-when-healthy"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.9
+    container_name: redpanda-init
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    env_file: .env
+    entrypoint: ["/bin/bash", "/scripts/init-redpanda-topics.sh"]
+    volumes:
+      - ./scripts:/scripts
+
+  # --- Spark cluster ---
+  spark-master:
+    build:
+      context: .
+      dockerfile: docker/spark/Dockerfile
+    container_name: spark-master
+    command: ["/opt/bitnami/scripts/spark/run.sh"]
+    environment:
+      SPARK_MODE: master
+    ports:
+      - "8081:8080"   # Spark master web UI
+      - "7077:7077"
+    volumes:
+      - ./jobs:/opt/spark/project/jobs
+      - ./storage:/opt/spark/project/storage
+      - ./config/spark-defaults.conf:/opt/spark-config/spark-defaults.conf
+
+  spark-worker:
+    build:
+      context: .
+      dockerfile: docker/spark/Dockerfile
+    container_name: spark-worker
+    command: ["/opt/bitnami/scripts/spark/run.sh"]
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: ${SPARK_MASTER_URL}
+      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES}
+      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY}
+    depends_on:
+      - spark-master
+    volumes:
+      - ./jobs:/opt/spark/project/jobs
+      - ./storage:/opt/spark/project/storage
+      - ./config/spark-defaults.conf:/opt/spark-config/spark-defaults.conf
+
+  # --- Airflow metadata database ---
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - "airflow db migrate && airflow users create --username airflow --password airflow --firstname Stream --lastname Flow --role Admin --email airflow@example.com"
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  redpanda_data:
+  postgres_data:
+  airflow_logs:
