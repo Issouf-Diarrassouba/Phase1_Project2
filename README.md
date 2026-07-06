@@ -72,20 +72,46 @@ Use the following generic blueprint configuration for local testing:
 
 ```env
 # Infrastructure Addresses
-BROKER_ADDRESS=localhost:19092
-SPARK_MASTER_URL=spark://spark-master:7077
+# .env -- Local Docker Compose development configuration
+# This file is for LOCAL DEV ONLY. Do not commit real secrets here;
+# it is listed in .gitignore.
+
+# --- Redpanda / Kafka ---
+BROKER_ADDRESS=redpanda:9092
+BROKER_ADDRESS_HOST=localhost:19092
 TOPIC_NAME=iot-telemetry
+TOPIC_PARTITIONS=3
+TOPIC_REPLICATION_FACTOR=1
 
-# Postgres Container DB Setup
-POSTGRES_USER=airflow
-POSTGRES_PASSWORD=your_secure_password_here
-POSTGRES_DB=airflow
+# --- Spark ---
+SPARK_MASTER_URL=spark://spark-master:7077
+SPARK_WORKER_CORES=2
+SPARK_WORKER_MEMORY=2g
+SPARK_KAFKA_PACKAGE=org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1
 
-# Airflow Configurations
+# --- Storage paths (mounted volumes, relative to project root inside containers) ---
+RAW_PATH=storage/raw
+CURATED_PATH=storage/curated
+DLQ_PATH=storage/dlq
+SUMMARY_PATH=storage/summary
+CHECKPOINT_ROOT=storage/checkpoint
+
+# --- Streaming tuning ---
+WATERMARK_DELAY=2 minutes
+TRIGGER_INTERVAL=10 seconds
+SUMMARY_WINDOW=15 minutes
+
+# --- Airflow ---
+AIRFLOW_UID=50000
 AIRFLOW__CORE__EXECUTOR=LocalExecutor
 AIRFLOW__CORE__LOAD_EXAMPLES=false
-AIRFLOW__WEBSERVER__SECRET_KEY=use_a_randomized_secret_string_here
-AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:your_secure_password_here@postgres/airflow
+AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+AIRFLOW__WEBSERVER__SECRET_KEY=dev-only-local-secret-key-change-me
+
+# --- Airflow metadata Postgres ---
+POSTGRES_USER=airflow
+POSTGRES_PASSWORD=password_here
+POSTGRES_DB=airflow
 ```
 
 ---
