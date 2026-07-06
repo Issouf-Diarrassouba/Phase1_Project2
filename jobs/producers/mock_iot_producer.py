@@ -1,5 +1,8 @@
 import random
 import uuid
+import json
+import time
+from kafka import KafkaProducer
 from datetime import datetime, timezone
 
 DEVICES = [
@@ -16,6 +19,11 @@ EVENT_RULES = {
     "smoke": (0, 1, "Boolean"),
     "battery": (0, 100, "%"),
 }
+
+producer = KafkaProducer(
+    bootstrap_servers="localhost:9092",
+    value_serializer=lambda v: json.dumps(v).encode("utf-8")
+)
 
 def generate_event():
     event_type = random.choice(list(EVENT_RULES.keys()))
@@ -39,5 +47,8 @@ def generate_event():
     }
 
 if __name__ == "__main__":
-    for _ in range(5):
-        print(generate_event())
+    while True:
+        event = generate_event()
+        producer.send("smart-home.events", value=event)
+        print(f"Sent: {event}")
+        time.sleep(1)
