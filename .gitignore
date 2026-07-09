@@ -6,4 +6,4 @@ storage/raw/
 storage/dlq/
 storage/checkpoint/
 storage/checkpoints/
-storage/summary/
+storage/summary/.env
