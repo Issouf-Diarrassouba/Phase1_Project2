@@ -114,3 +114,35 @@ rm -rf ./storage/raw/events/_spark_metadata
 ```
 
 This only removes Spark's internal bookkeeping for exactly-once writes — it does not touch any actual `.parquet` data files.
+
+
+## Known gotcha
+
+If the batch summary throws `Unable to infer schema for Parquet` after multiple consumer restarts, it's usually a stale streaming metadata log. Clear it and re-run:
+
+```bash
+rm -rf ./storage/raw/events/_spark_metadata
+```
+
+This only removes Spark's internal bookkeeping for exactly-once writes — it does not touch any actual `.parquet` data files.
+
+**Important:** the checkpoint (`storage/checkpoint/events`) and `_spark_metadata` are a matched pair. Deleting one while leaving the other in place will cause the consumer to fail on its next run with:
+
+```
+[BATCH_METADATA_NOT_FOUND] Unable to find batch file:/app/storage/raw/events/_spark_metadata/<N>.compact
+```
+
+If this happens, do a full clean reset of both sides together:
+
+```bash
+docker compose down
+rm -rf ./storage/checkpoint/events
+rm -rf ./storage/checkpoint/dlq
+rm -rf ./storage/raw/events
+rm -rf ./storage/dlq/events
+docker compose up --build
+```
+
+Since the producer/consumer use `startingOffsets: earliest`, restarting after this reset will re-read everything currently in the Kafka topic and rebuild `storage/raw/events` from scratch — no underlying event data is lost, only the previously generated Parquet output (which regenerates automatically).
+
+**Note:** this cleanup is *not* part of the normal run cycle. A regular `docker compose up --build` → stop → `docker compose up --build` cycle resumes cleanly from the existing checkpoint with no issues. This reset is only needed if checkpoint and metadata get out of sync — most commonly from manually deleting `_spark_metadata` (per the gotcha above) while the checkpoint still references old batch numbers. To avoid this scenario going forward: if the batch summary throws the schema-inference error, try restarting the consumer first (let it write one fresh batch) and re-running the batch summary before resorting to deleting `_spark_metadata` directly.

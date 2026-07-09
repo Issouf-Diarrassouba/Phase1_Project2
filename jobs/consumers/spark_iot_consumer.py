@@ -98,12 +98,12 @@ if __name__ == "__main__":
     valid_query = write_valid_stream(
         valid_df,
         output_path="storage/raw/events",
-        checkpoint_path="storage/checkpoints/events"
+        checkpoint_path="storage/checkpoint/events"
     )
     rejected_query = write_rejected_stream(
         rejected_df,
         output_path="storage/dlq/events",
-        checkpoint_path="storage/checkpoints/dlq"
+        checkpoint_path="storage/checkpoint/dlq"
     )
 
     valid_query.awaitTermination()
