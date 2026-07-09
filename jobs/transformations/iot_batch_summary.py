@@ -1,5 +1,14 @@
+import os
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import avg, count, min, max
+
+# Paths are configurable so the same script works everywhere:
+#   - inside the spark container (README command): defaults /storage/... still work
+#   - from the Airflow DAG: it sets IOT_BATCH_INPUT / IOT_BATCH_OUTPUT to the
+#     paths mounted inside the Airflow container (/opt/streamflow/storage/...)
+INPUT_PATH = os.environ.get("IOT_BATCH_INPUT", "/storage/raw/events")
+OUTPUT_DIR = os.environ.get("IOT_BATCH_OUTPUT", "/storage/summary")
 
 # Creating the spark session
 
@@ -9,9 +18,12 @@ spark = (
     .getOrCreate()
 )
 
+print(f"[batch] reading raw events from : {INPUT_PATH}")
+print(f"[batch] writing summaries under : {OUTPUT_DIR}")
+
 # Reading the raw parquet files
 
-raw_df = spark.read.parquet("storage/raw/events")  # Confirm path with Brian
+raw_df = spark.read.parquet(INPUT_PATH)
 
 # Inspecting the data
 
@@ -57,11 +69,11 @@ room_summary.show()
 
 # Writing the summaries to Parquet
 
-event_summary.write.mode("overwrite").parquet("storage/summary/event_summary")
+event_summary.write.mode("overwrite").parquet(os.path.join(OUTPUT_DIR, "event_summary"))
 
-metric_summary.write.mode("overwrite").parquet("storage/summary/metric_summary")
+metric_summary.write.mode("overwrite").parquet(os.path.join(OUTPUT_DIR, "metric_summary"))
 
-room_summary.write.mode("overwrite").parquet("storage/summary/room_summary")
+room_summary.write.mode("overwrite").parquet(os.path.join(OUTPUT_DIR, "room_summary"))
 
 print("Batch summary completed successfully.")
 

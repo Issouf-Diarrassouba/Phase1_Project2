@@ -1,0 +1,88 @@
+services:
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.7
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+    ports:
+      - "9092:9092"
+
+  spark:
+    image: apache/spark:4.0.3
+    container_name: spark
+    depends_on:
+      - redpanda
+    volumes:
+      - ./jobs:/jobs
+      - ./storage:/storage
+    working_dir: /jobs
+    command: tail -f /dev/null
+
+  producer:
+    image: python:3.11
+    container_name: producer
+    depends_on:
+      - redpanda
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: >
+      sh -c "
+      pip install kafka-python &&
+      python jobs/producers/mock_iot_producer.py
+      "
+
+  consumer:
+    image: apache/spark:4.0.3
+    container_name: consumer
+    depends_on:
+      - redpanda
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - HOME=/tmp
+      - PYTHONPATH=/app
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - ./storage:/storage
+    command: >
+      /opt/spark/bin/spark-submit
+      --conf spark.jars.ivy=/tmp/.ivy2
+      --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.3
+      jobs/consumers/spark_iot_consumer.py
+
+  airflow:
+    build: ./docker/airflow
+    container_name: airflow
+    depends_on:
+      - redpanda
+    ports:
+      - "8080:8080"
+    environment:
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      # where the DAG looks for the project inside THIS container
+      - IOT_PROJECT_DIR=/opt/streamflow
+      # (optional overrides — defaults in the DAG already match these)
+      - IOT_RAW_PATH=/opt/streamflow/storage/raw/events
+      - IOT_SUMMARY_DIR=/opt/streamflow/storage/summary
+    volumes:
+      # DAG definitions (repo's dag/ folder mounted where Airflow expects dags)
+      - ./dag:/opt/airflow/dags
+      # the batch job code, so spark-submit can find it
+      - ./jobs:/opt/streamflow/jobs
+      # the SAME host ./storage the consumer container writes into —
+      # this is what makes sensor + batch job + validation all agree
+      - ./storage:/opt/streamflow/storage
+    command: airflow standalone
