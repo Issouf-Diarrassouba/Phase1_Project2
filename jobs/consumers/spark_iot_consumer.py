@@ -1,18 +1,21 @@
+import os
 from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType, DoubleType
 from pyspark.sql.functions import from_json, col, when
+from jobs.schemas.schema import event_schema
 
+# from pyspark.sql.types import StructType, StructField, StringType, DoubleType
+# event schema definied in the schema file 
 # ---- 1. Define the schema (must match your producer's flat structure exactly) ----
-event_schema = StructType([
-    StructField("event_id", StringType(), False),
-    StructField("event_type", StringType(), False),
-    StructField("event_ts", StringType(), False),
-    StructField("device_id", StringType(), False),
-    StructField("room", StringType(), False),
-    StructField("source", StringType(), False),
-    StructField("value", DoubleType(), False),
-    StructField("unit", StringType(), False),
-])
+# event_schema = StructType([
+#     StructField("event_id", StringType(), False),
+#     StructField("event_type", StringType(), False),
+#     StructField("event_ts", StringType(), False),
+#     StructField("device_id", StringType(), False),
+#     StructField("room", StringType(), False),
+#     StructField("source", StringType(), False),
+#     StructField("value", DoubleType(), False),
+#     StructField("unit", StringType(), False),
+# ])
 
 # ---- 2. Validation rules (same ranges as your producer used) ----
 VALID_EVENT_TYPES = ["temperature", "humidity", "motion", "smoke", "battery"]
@@ -31,7 +34,9 @@ def build_spark_session():
         .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.2") \
         .getOrCreate()
 
-def read_from_kafka(spark, bootstrap_servers="localhost:9092", topic="smart-home.events"):
+def read_from_kafka(spark, bootstrap_servers=None, topic="smart-home.events"):
+    if bootstrap_servers is None:
+        bootstrap_servers = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
     return spark.readStream \
         .format("kafka") \
         .option("kafka.bootstrap.servers", bootstrap_servers) \
@@ -90,7 +95,15 @@ if __name__ == "__main__":
     parsed_df = parse_events(raw_df)
     valid_df, rejected_df = validate_events(parsed_df)
 
-    valid_query = write_valid_stream(valid_df)
-    rejected_query = write_rejected_stream(rejected_df)
+    valid_query = write_valid_stream(
+        valid_df,
+        output_path="storage/raw/events",
+        checkpoint_path="storage/checkpoints/events"
+    )
+    rejected_query = write_rejected_stream(
+        rejected_df,
+        output_path="storage/dlq/events",
+        checkpoint_path="storage/checkpoints/dlq"
+    )
 
     valid_query.awaitTermination()

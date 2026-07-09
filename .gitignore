@@ -1,3 +1,9 @@
 __pycache__/
 venv/
 *.pyc
+data/
+storage/raw/
+storage/dlq/
+storage/checkpoint/
+storage/checkpoints/
+storage/summary/
