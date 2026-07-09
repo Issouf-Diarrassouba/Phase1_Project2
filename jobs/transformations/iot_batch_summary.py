@@ -11,7 +11,7 @@ spark = (
 
 # Reading the raw parquet files
 
-raw_df = spark.read.parquet("storage/raw/events")  # Confirm path with Brian
+raw_df = spark.read.parquet("/storage/raw/events")  # Confirm path with Brian
 
 # Inspecting the data
 
@@ -57,11 +57,11 @@ room_summary.show()
 
 # Writing the summaries to Parquet
 
-event_summary.write.mode("overwrite").parquet("storage/summary/event_summary")
+event_summary.write.mode("overwrite").parquet("/storage/summary/event_summary")
 
-metric_summary.write.mode("overwrite").parquet("storage/summary/metric_summary")
+metric_summary.write.mode("overwrite").parquet("/storage/summary/metric_summary")
 
-room_summary.write.mode("overwrite").parquet("storage/summary/room_summary")
+room_summary.write.mode("overwrite").parquet("/storage/summary/room_summary")
 
 print("Batch summary completed successfully.")
 
