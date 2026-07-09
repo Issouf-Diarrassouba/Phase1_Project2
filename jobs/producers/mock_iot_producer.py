@@ -1,3 +1,4 @@
+import os
 import random
 import uuid
 import json
@@ -42,10 +43,15 @@ def generate_event():
     }
 
 if __name__ == "__main__":
+    # Use the broker address from the environment (compose sets this to
+    # redpanda:9092). Falls back to localhost for running outside Docker.
+    bootstrap_servers = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+
     producer = KafkaProducer(
-        bootstrap_servers="localhost:9092",
-        value_serializer=lambda v: json.dumps(v).encode("utf-8")
+        bootstrap_servers=bootstrap_servers,
+        value_serializer=lambda v: json.dumps(v).encode("utf-8"),
     )
+    print(f"[producer] connected to {bootstrap_servers}, publishing to smart-home.events")
 
     while True:
         event = generate_event()

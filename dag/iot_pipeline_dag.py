@@ -127,7 +127,8 @@ with DAG(
         task_id="run_batch_summary",
         bash_command=(
             f"cd {PROJECT_DIR} && "
-            f"{SPARK_SUBMIT} --master local[2] {BATCH_JOB}"
+            f"{SPARK_SUBMIT} --master local[2] {BATCH_JOB} "
+            f"{RAW_PATH} {SUMMARY_DIR}"  # pass paths as argv (reliable)
         ),
         # FIX: the batch job now reads its paths from env instead of
         # hard-coding /storage/... — point it at THIS container's mounts.
